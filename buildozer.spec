@@ -28,6 +28,9 @@ icon.filename = logo.png
 # (str) Presplash of the application
 presplash.filename = logo.png
 
+# (str) Presplash background color (for android)
+android.presplash_color = #FAFAFA
+
 # (str) Supported orientation (landscape, portrait, portrait-reverse or landscape-reverse)
 orientation = portrait
 
@@ -51,6 +54,10 @@ android.archs = arm64-v8a, armeabi-v7a
 
 # (bool) enables Android auto backup feature (Android API >=23)
 android.allow_backup = True
+
+# (bool) If True, then the application will be kept active when it is started
+# এটি সার্ভার চালু রাখার জন্য জরুরি
+android.wakelock = True
 
 # 🔥 CRITICAL FIX: Automatically accept SDK license (Fixes 'Aidl not found' error)
 android.accept_sdk_license = True
