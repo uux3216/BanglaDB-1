@@ -12,7 +12,7 @@ from flask import Flask, request, jsonify
 from kivymd.app import MDApp
 from kivymd.uix.screen import Screen
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.list import MDList, OneLineAvatarIconListItem, IconLeftWidget, IconRightWidget, ThreeLineAvatarIconListItem
+from kivymd.uix.list import MDList, OneLineAvatarIconListItem, IconLeftWidget, IconRightWidget, ThreeLineAvatarIconListItem, IRightBodyTouch
 from kivymd.uix.toolbar import MDTopAppBar
 from kivymd.uix.dialog import MDDialog
 from kivymd.uix.button import MDRaisedButton, MDFlatButton, MDIconButton, MDFillRoundFlatButton
@@ -31,8 +31,15 @@ from kivy.properties import StringProperty
 from kivy.core.window import Window
 from kivy.utils import platform
 
-# কিবোর্ড সমস্যার সমাধান
+# কিবোর্ড সমস্যা সমাধান
 Window.softinput_mode = "below_target"
+
+# ==========================================
+# 🔥 CRITICAL FIX: Right Content Container Class
+# ==========================================
+# এই ক্লাসটি লিস্ট আইটেমের ডান পাশে একাধিক বাটন রাখার জন্য ব্যবহার হবে।
+class RightContentCls(IRightBodyTouch, MDBoxLayout):
+    adaptive_width = True
 
 # ==========================================
 # ১. KV ডিজাইন (কালার ও লেআউট)
@@ -42,6 +49,7 @@ KV_CODE = '''
 #:set color_primary_blue [0, 0.48, 1, 1]
 #:set color_success_green [0, 0.8, 0.3, 1]
 #:set color_danger_red [1, 0.2, 0.2, 1]
+#:set color_warning_yellow [1, 0.75, 0, 1]
 #:set color_card_white [1, 1, 1, 1]
 
 <DrawerClickableItem@MDNavigationDrawerItem>
@@ -388,7 +396,7 @@ KV_CODE = '''
 '''
 
 # ==========================================
-# ২. ব্যাকেন্ড ইঞ্জিন (User Isolation & Unique ID System)
+# ২. ব্যাকেন্ড ইঞ্জিন (Backend)
 # ==========================================
 server = Flask(__name__)
 SERVER_THREAD_STARTED = False
@@ -423,19 +431,14 @@ class BackendEngine:
 
     def register_user(self, user, password):
         with open(self.auth_file, 'r') as f: users = json.load(f)
-        
-        # ডুপ্লিকেট চেকিং: ইউজারনেম এবং পাসওয়ার্ড দুটোই মিললে আটকাবে
         for u in users:
             if u['user'] == user and u['pass'] == password:
                 return False, "This User+Password combination already exists!"
         
-        # ইউনিক ফোল্ডার আইডি (UUID) তৈরি
         unique_id = str(uuid.uuid4())
-        
         users.append({"user": user, "pass": password, "uid": unique_id})
         with open(self.auth_file, 'w') as f: json.dump(users, f)
         
-        # ফোল্ডার তৈরি (UUID দিয়ে)
         user_folder = os.path.join(self.root, unique_id)
         if not os.path.exists(user_folder): os.makedirs(user_folder)
         
@@ -446,16 +449,12 @@ class BackendEngine:
         for u in users:
             if u['user'] == user and u['pass'] == password:
                 global CURRENT_USER
-                CURRENT_USER = u # UID সহ পুরো অবজেক্ট সেভ
-                
-                # ফোল্ডার চেক
+                CURRENT_USER = u
                 user_folder = os.path.join(self.root, u.get('uid'))
                 if not os.path.exists(user_folder): os.makedirs(user_folder)
-                
                 return True, "Login Success!"
         return False, "Invalid Credentials"
 
-    # 🔥 ইউজারের সঠিক ফোল্ডার পাথ পাওয়ার ফাংশন
     def get_user_path(self, target_user_dict=None):
         user_info = target_user_dict if target_user_dict else CURRENT_USER
         if user_info and 'uid' in user_info:
@@ -473,6 +472,15 @@ class BackendEngine:
         path = f"{user_path}/{name}.json"
         if not os.path.exists(path):
             with open(path, 'w') as f: json.dump({"tables": {}}, f)
+            return True
+        return False
+
+    def rename_db(self, old_name, new_name):
+        user_path = self.get_user_path()
+        old_path = os.path.join(user_path, f"{old_name}.json")
+        new_path = os.path.join(user_path, f"{new_name}.json")
+        if os.path.exists(old_path) and not os.path.exists(new_path):
+            os.rename(old_path, new_path)
             return True
         return False
 
@@ -494,6 +502,22 @@ class BackendEngine:
             d["tables"][table] = {"columns": ["id"] + cols, "rows": []}
             with open(path, 'w') as f: json.dump(d, f, indent=4)
 
+    def update_table_struct(self, db, old_table_name, new_table_name, new_cols):
+        path = f"{self.get_user_path()}/{db}.json"
+        with open(path, 'r') as f: d = json.load(f)
+        
+        if old_table_name in d["tables"]:
+            table_data = d["tables"].pop(old_table_name)
+            
+            if "id" not in new_cols: new_cols.insert(0, "id")
+            table_data["columns"] = new_cols
+            
+            d["tables"][new_table_name] = table_data
+            
+            with open(path, 'w') as f: json.dump(d, f, indent=4)
+            return True
+        return False
+
     def delete_table(self, db, table):
         path = f"{self.get_user_path()}/{db}.json"
         with open(path, 'r') as f: d = json.load(f)
@@ -514,18 +538,31 @@ class BackendEngine:
         path = f"{self.get_user_path(user_obj)}/{db}.json"
         with open(path, 'r') as f: d = json.load(f)
         rows = d["tables"][table]["rows"]
-        new_id = str(max([int(r["id"]) for r in rows], default=0) + 1)
+        new_id = str(max([int(r.get("id", 0)) for r in rows], default=0) + 1)
         data["id"] = new_id
         rows.append(data)
         with open(path, 'w') as f: json.dump(d, f, indent=4)
 
+    def update_row_data(self, db, table, row_id, new_data, user_obj=None):
+        path = f"{self.get_user_path(user_obj)}/{db}.json"
+        with open(path, 'r') as f: d = json.load(f)
+        rows = d["tables"][table]["rows"]
+        
+        for i, row in enumerate(rows):
+            if str(row.get("id")) == str(row_id):
+                new_data["id"] = row_id
+                rows[i] = new_data
+                with open(path, 'w') as f: json.dump(d, f, indent=4)
+                return True
+        return False
+
     def delete_data(self, db, table, row_id):
         path = f"{self.get_user_path()}/{db}.json"
         with open(path, 'r') as f: d = json.load(f)
-        d["tables"][table]["rows"] = [r for r in d["tables"][table]["rows"] if r["id"] != row_id]
+        d["tables"][table]["rows"] = [r for r in d["tables"][table]["rows"] if str(r.get("id")) != str(row_id)]
         with open(path, 'w') as f: json.dump(d, f, indent=4)
 
-    # --- Backup System (Updated for UUID) ---
+    # --- Backup System ---
     def create_backup(self, db_name=None):
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         user_path = self.get_user_path()
@@ -567,8 +604,7 @@ class BackendEngine:
         with open(self.auth_file, 'r') as f: users = json.load(f)
         for u in users:
             if u['user'] == user and u['pass'] == password:
-                if 'uid' not in u: # Old user migration fallback
-                     u['uid'] = str(uuid.uuid4())
+                if 'uid' not in u: u['uid'] = str(uuid.uuid4())
                 return u
         return None
 
@@ -595,7 +631,15 @@ def api_handler():
         elif action == "insert":
             engine.insert_data(db, table, data.get('row'), user_obj=user_obj)
             return jsonify({"status": "success"})
-        return jsonify({"status": "error"})
+        elif action == "update":
+            row_id = data.get('id')
+            new_data = data.get('data')
+            if engine.update_row_data(db, table, row_id, new_data, user_obj=user_obj):
+                return jsonify({"status": "success", "msg": "Updated"})
+            else:
+                return jsonify({"status": "error", "msg": "ID not found"})
+                
+        return jsonify({"status": "error", "msg": "Invalid Action"})
     except Exception as e: return jsonify({"status": "error", "msg": str(e)})
 
 def run_flask(): server.run(host='0.0.0.0', port=5000)
@@ -643,12 +687,34 @@ class HomeScreen(Screen):
     def load_dbs(self):
         self.ids.db_list_view.clear_widgets()
         for db in engine.get_databases():
-            item = OneLineAvatarIconListItem(text=db, bg_color=(1,1,1,1), on_release=lambda x, d=db: MDApp.get_running_app().open_table_screen(d))
+            item = OneLineAvatarIconListItem(
+                text=db, 
+                bg_color=(1,1,1,1), 
+                on_release=lambda x, d=db: MDApp.get_running_app().open_table_screen(d)
+            )
             item.add_widget(IconLeftWidget(icon="database", theme_text_color="Custom", text_color=(0, 0.48, 1, 1)))
-            del_btn = IconRightWidget(icon="trash-can", theme_text_color="Custom", text_color=(1, 0.2, 0.2, 1))
+            
+            # 🔥 FIX: RightContentCls ব্যবহার করা হয়েছে
+            right_container = RightContentCls(spacing=dp(0), padding=[dp(0), 0, dp(250), 0])
+            
+            edit_btn = MDIconButton(icon="pencil", theme_text_color="Custom", text_color=(1, 0.75, 0, 1), pos_hint={"center_y": .5})
+            edit_btn.bind(on_release=lambda x, d=db: self.show_rename_db_dialog(d))
+            
+            del_btn = MDIconButton(icon="trash-can", theme_text_color="Custom", text_color=(1, 0.2, 0.2, 1), pos_hint={"center_y": .5})
             del_btn.bind(on_release=lambda x, d=db: self.confirm_delete(d))
-            item.add_widget(del_btn)
+            
+            right_container.add_widget(edit_btn)
+            right_container.add_widget(del_btn)
+            
+            item.add_widget(right_container)
             self.ids.db_list_view.add_widget(item)
+
+    def show_rename_db_dialog(self, old_name):
+        self.tf_rename = MDTextField(text=old_name, hint_text="New Database Name")
+        self.dialog = MDDialog(title="Rename Database", type="custom", content_cls=self.tf_rename,
+                               buttons=[MDRaisedButton(text="RENAME", on_release=lambda x: (engine.rename_db(old_name, self.tf_rename.text), self.load_dbs(), self.dialog.dismiss())),
+                                        MDFlatButton(text="CANCEL", on_release=lambda x: self.dialog.dismiss())])
+        self.dialog.open()
 
     def confirm_delete(self, db):
         self.dialog = MDDialog(title="Delete Database?", text=f"Delete '{db}'? ALL DATA WILL BE LOST!",
@@ -682,10 +748,36 @@ class TableScreen(Screen):
         for t in engine.get_tables(self.db_name):
             item = OneLineAvatarIconListItem(text=t, bg_color=(1,1,1,1), on_release=lambda x, table=t: MDApp.get_running_app().open_data_screen(self.db_name, table))
             item.add_widget(IconLeftWidget(icon="table", theme_text_color="Custom", text_color=(0, 0.48, 1, 1)))
-            del_btn = IconRightWidget(icon="trash-can", theme_text_color="Custom", text_color=(1, 0.2, 0.2, 1))
+            
+            # 🔥 FIX: RightContentCls ব্যবহার করা হয়েছে
+            right_container = RightContentCls(spacing=dp(0), padding=[dp(0), 0, dp(250), 0])
+            
+            edit_btn = MDIconButton(icon="pencil", theme_text_color="Custom", text_color=(1, 0.75, 0, 1), pos_hint={"center_y": .5})
+            edit_btn.bind(on_release=lambda x, table=t: self.show_edit_table_dialog(table))
+            
+            del_btn = MDIconButton(icon="trash-can", theme_text_color="Custom", text_color=(1, 0.2, 0.2, 1), pos_hint={"center_y": .5})
             del_btn.bind(on_release=lambda x, table=t: self.confirm_delete(table))
-            item.add_widget(del_btn)
+            
+            right_container.add_widget(edit_btn)
+            right_container.add_widget(del_btn)
+            
+            item.add_widget(right_container)
             self.ids.table_list.add_widget(item)
+
+    def show_edit_table_dialog(self, old_table_name):
+        c, _ = engine.get_table_data(self.db_name, old_table_name)
+        cols_str = ",".join([col for col in c if col != 'id'])
+        
+        self.bx = MDBoxLayout(orientation="vertical", size_hint_y=None, height="120dp")
+        self.tf_name_edit = MDTextField(text=old_table_name, hint_text="Table Name")
+        self.tf_cols_edit = MDTextField(text=cols_str, hint_text="Columns (comma separated)")
+        self.bx.add_widget(self.tf_name_edit)
+        self.bx.add_widget(self.tf_cols_edit)
+        
+        self.dialog = MDDialog(title="Edit Table & Columns", type="custom", content_cls=self.bx,
+                               buttons=[MDRaisedButton(text="UPDATE", on_release=lambda x: (engine.update_table_struct(self.db_name, old_table_name, self.tf_name_edit.text, self.tf_cols_edit.text.split(',')), self.on_enter(), self.dialog.dismiss())),
+                                        MDFlatButton(text="CANCEL", on_release=lambda x: self.dialog.dismiss())])
+        self.dialog.open()
     
     def confirm_delete(self, table):
         self.dialog = MDDialog(title="Delete Table?", text=f"Delete table '{table}'?", 
@@ -714,17 +806,42 @@ class DataScreen(Screen):
         for r in rows:
             row_id = r.get("id", "?")
             all_data = " | ".join([f"{k}:{v}" for k,v in r.items() if k != 'id'])
+            
+            # 🔥 FIX: লিস্ট আইটেম (এখন ক্লিক ইভেন্ট বাদ দেওয়া হলো)
             item = ThreeLineAvatarIconListItem(text=f"ID: {row_id}", secondary_text=all_data, bg_color=(1,1,1,1))
-            item.bind(on_release=lambda x, d=r: self.show_details(d))
+            
             item.add_widget(IconLeftWidget(icon="text-box-outline", theme_text_color="Custom", text_color=(0, 0.48, 1, 1)))
-            del_btn = IconRightWidget(icon="trash-can", theme_text_color="Custom", text_color=(1, 0.2, 0.2, 1))
+            
+            # 🔥 FIX: RightContentCls ব্যবহার করা হয়েছে এবং বাটন সঠিকভাবে বাইন্ড করা হয়েছে
+            right_container = RightContentCls(spacing=dp(0), padding=[dp(0), 0, dp(250), 0])
+            
+            edit_btn = MDIconButton(icon="pencil", theme_text_color="Custom", text_color=(1, 0.75, 0, 1), pos_hint={"center_y": .5})
+            edit_btn.bind(on_release=lambda x, d=r: self.show_edit_row_dialog(d))
+            
+            del_btn = MDIconButton(icon="trash-can", theme_text_color="Custom", text_color=(1, 0.2, 0.2, 1), pos_hint={"center_y": .5})
             del_btn.bind(on_release=lambda x, rid=row_id: self.confirm_delete(rid))
-            item.add_widget(del_btn)
+            
+            right_container.add_widget(edit_btn)
+            right_container.add_widget(del_btn)
+            
+            item.add_widget(right_container)
             self.ids.data_list.add_widget(item)
 
-    def show_details(self, data):
-        text = "\n".join([f"{k.upper()}: {v}" for k,v in data.items()])
-        self.dialog = MDDialog(title="Row Details", text=text, buttons=[MDFlatButton(text="CLOSE", on_release=lambda x: self.dialog.dismiss())])
+    def show_edit_row_dialog(self, row_data):
+        c, _ = engine.get_table_data(self.db_name, self.table_name)
+        dialog_height = dp(60 * (len(c) - 1)) if len(c) > 1 else dp(100)
+        self.bx = MDBoxLayout(orientation="vertical", size_hint_y=None, height=dialog_height)
+        self.inputs = {}
+        
+        for col in c:
+            if col == 'id': continue
+            tf = MDTextField(text=str(row_data.get(col, "")), hint_text=col)
+            self.inputs[col] = tf
+            self.bx.add_widget(tf)
+            
+        self.dialog = MDDialog(title=f"Edit Row ID: {row_data.get('id')}", type="custom", content_cls=self.bx,
+                               buttons=[MDRaisedButton(text="UPDATE", on_release=lambda x: (engine.update_row_data(self.db_name, self.table_name, row_data.get('id'), {k: v.text for k,v in self.inputs.items()}), self.on_enter(), self.dialog.dismiss())),
+                                        MDFlatButton(text="CANCEL", on_release=lambda x: self.dialog.dismiss())])
         self.dialog.open()
 
     def confirm_delete(self, row_id):
@@ -735,7 +852,9 @@ class DataScreen(Screen):
 
     def add_data_dialog(self):
         c, _ = engine.get_table_data(self.db_name, self.table_name)
-        self.bx = MDBoxLayout(orientation="vertical", size_hint_y=None, height=dp(50*len(c))); self.inputs = {col: MDTextField(hint_text=col) for col in c if col != 'id'}
+        dialog_height = dp(60 * (len(c) - 1)) if len(c) > 1 else dp(100)
+        self.bx = MDBoxLayout(orientation="vertical", size_hint_y=None, height=dialog_height); 
+        self.inputs = {col: MDTextField(hint_text=col) for col in c if col != 'id'}
         for w in self.inputs.values(): self.bx.add_widget(w)
         self.create_dialog = MDDialog(title="Add Data", type="custom", content_cls=self.bx, 
                                       buttons=[MDRaisedButton(text="SAVE", on_release=lambda x: (engine.insert_data(self.db_name, self.table_name, {k: v.text for k,v in self.inputs.items()}), self.on_enter(), self.create_dialog.dismiss())), 
