@@ -20,7 +20,8 @@ version = 1.0
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,kivy,kivymd,flask,werkzeug,jinja2,itsdangerous,click,markupsafe,pillow,android,openssl
+# flask==2.2.5 এবং werkzeug==2.2.3 ব্যবহার করা হচ্ছে
+requirements = python3,kivy==2.3.0,kivymd==1.1.1,flask==2.2.5,werkzeug==2.2.3,jinja2,itsdangerous,click,markupsafe,pillow,android,openssl
 
 # (str) Icon of the application
 icon.filename = logo.png
