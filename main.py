@@ -8,6 +8,10 @@ import uuid
 from datetime import datetime
 from flask import Flask, request, jsonify
 
+# 🔥 FIX: লাল ডট (Multi-touch Red Dot) বন্ধ করার কনফিগারেশন
+from kivy.config import Config
+Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
+
 # Kivy & KivyMD Imports
 from kivymd.app import MDApp
 from kivymd.uix.screen import Screen
@@ -30,6 +34,7 @@ from kivy.metrics import dp
 from kivy.properties import StringProperty
 from kivy.core.window import Window
 from kivy.utils import platform
+from kivy.uix.widget import Widget 
 
 # কিবোর্ড সমস্যা সমাধান
 Window.softinput_mode = "below_target"
@@ -37,7 +42,6 @@ Window.softinput_mode = "below_target"
 # ==========================================
 # 🔥 CRITICAL FIX: Right Content Container Class
 # ==========================================
-# এই ক্লাসটি লিস্ট আইটেমের ডান পাশে একাধিক বাটন রাখার জন্য ব্যবহার হবে।
 class RightContentCls(IRightBodyTouch, MDBoxLayout):
     adaptive_width = True
 
@@ -694,8 +698,8 @@ class HomeScreen(Screen):
             )
             item.add_widget(IconLeftWidget(icon="database", theme_text_color="Custom", text_color=(0, 0.48, 1, 1)))
             
-            # 🔥 FIX: RightContentCls ব্যবহার করা হয়েছে
-            right_container = RightContentCls(spacing=dp(0), padding=[dp(0), 0, dp(250), 0])
+            # 🔥 FIX: RightContentCls ব্যবহার করে স্পেসিং ঠিক করা হয়েছে
+            right_container = RightContentCls(spacing=dp(15))
             
             edit_btn = MDIconButton(icon="pencil", theme_text_color="Custom", text_color=(1, 0.75, 0, 1), pos_hint={"center_y": .5})
             edit_btn.bind(on_release=lambda x, d=db: self.show_rename_db_dialog(d))
@@ -703,8 +707,12 @@ class HomeScreen(Screen):
             del_btn = MDIconButton(icon="trash-can", theme_text_color="Custom", text_color=(1, 0.2, 0.2, 1), pos_hint={"center_y": .5})
             del_btn.bind(on_release=lambda x, d=db: self.confirm_delete(d))
             
+            # 🔥 FIX: Spacer Widget দিয়ে ডান পাশে ফাঁকা রাখা হয়েছে
+            spacer = Widget(size_hint_x=None, width=dp(15)) 
+            
             right_container.add_widget(edit_btn)
             right_container.add_widget(del_btn)
+            right_container.add_widget(spacer) # স্পেসার শেষে যোগ
             
             item.add_widget(right_container)
             self.ids.db_list_view.add_widget(item)
@@ -746,11 +754,15 @@ class TableScreen(Screen):
     def on_enter(self):
         self.ids.table_list.clear_widgets()
         for t in engine.get_tables(self.db_name):
-            item = OneLineAvatarIconListItem(text=t, bg_color=(1,1,1,1), on_release=lambda x, table=t: MDApp.get_running_app().open_data_screen(self.db_name, table))
+            item = OneLineAvatarIconListItem(
+                text=t, 
+                bg_color=(1,1,1,1), 
+                on_release=lambda x, table=t: MDApp.get_running_app().open_data_screen(self.db_name, table)
+            )
             item.add_widget(IconLeftWidget(icon="table", theme_text_color="Custom", text_color=(0, 0.48, 1, 1)))
             
-            # 🔥 FIX: RightContentCls ব্যবহার করা হয়েছে
-            right_container = RightContentCls(spacing=dp(0), padding=[dp(0), 0, dp(250), 0])
+            # 🔥 FIX
+            right_container = RightContentCls(spacing=dp(15))
             
             edit_btn = MDIconButton(icon="pencil", theme_text_color="Custom", text_color=(1, 0.75, 0, 1), pos_hint={"center_y": .5})
             edit_btn.bind(on_release=lambda x, table=t: self.show_edit_table_dialog(table))
@@ -758,8 +770,12 @@ class TableScreen(Screen):
             del_btn = MDIconButton(icon="trash-can", theme_text_color="Custom", text_color=(1, 0.2, 0.2, 1), pos_hint={"center_y": .5})
             del_btn.bind(on_release=lambda x, table=t: self.confirm_delete(table))
             
+            # 🔥 Spacer
+            spacer = Widget(size_hint_x=None, width=dp(15))
+            
             right_container.add_widget(edit_btn)
             right_container.add_widget(del_btn)
+            right_container.add_widget(spacer)
             
             item.add_widget(right_container)
             self.ids.table_list.add_widget(item)
@@ -807,13 +823,11 @@ class DataScreen(Screen):
             row_id = r.get("id", "?")
             all_data = " | ".join([f"{k}:{v}" for k,v in r.items() if k != 'id'])
             
-            # 🔥 FIX: লিস্ট আইটেম (এখন ক্লিক ইভেন্ট বাদ দেওয়া হলো)
             item = ThreeLineAvatarIconListItem(text=f"ID: {row_id}", secondary_text=all_data, bg_color=(1,1,1,1))
-            
             item.add_widget(IconLeftWidget(icon="text-box-outline", theme_text_color="Custom", text_color=(0, 0.48, 1, 1)))
             
-            # 🔥 FIX: RightContentCls ব্যবহার করা হয়েছে এবং বাটন সঠিকভাবে বাইন্ড করা হয়েছে
-            right_container = RightContentCls(spacing=dp(0), padding=[dp(0), 0, dp(250), 0])
+            # 🔥 FIX: Right Container & Buttons
+            right_container = RightContentCls(spacing=dp(15))
             
             edit_btn = MDIconButton(icon="pencil", theme_text_color="Custom", text_color=(1, 0.75, 0, 1), pos_hint={"center_y": .5})
             edit_btn.bind(on_release=lambda x, d=r: self.show_edit_row_dialog(d))
@@ -821,8 +835,12 @@ class DataScreen(Screen):
             del_btn = MDIconButton(icon="trash-can", theme_text_color="Custom", text_color=(1, 0.2, 0.2, 1), pos_hint={"center_y": .5})
             del_btn.bind(on_release=lambda x, rid=row_id: self.confirm_delete(rid))
             
+            # 🔥 Spacer Widget for margin
+            spacer = Widget(size_hint_x=None, width=dp(15))
+            
             right_container.add_widget(edit_btn)
             right_container.add_widget(del_btn)
+            right_container.add_widget(spacer)
             
             item.add_widget(right_container)
             self.ids.data_list.add_widget(item)
@@ -966,6 +984,16 @@ class BanglaDBApp(MDApp):
         self.sm.add_widget(ConnectionScreen(name="connect"))
         self.sm.add_widget(BackupScreen(name="backup"))
         return self.sm
+
+    # 🔥 FIX: অ্যাপ চালু হওয়ার সময় পারমিশন চাওয়া
+    def on_start(self):
+        if platform == 'android':
+            from android.permissions import request_permissions, Permission
+            request_permissions([
+                Permission.READ_EXTERNAL_STORAGE, 
+                Permission.WRITE_EXTERNAL_STORAGE,
+                Permission.INTERNET
+            ])
 
     def switch_screen(self, name): self.sm.current = name
     def open_table_screen(self, db): self.sm.get_screen("tables").db_name = db; self.switch_screen("tables")
