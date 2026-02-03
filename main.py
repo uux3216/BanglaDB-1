@@ -1146,3 +1146,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"CRITICAL APP CRASH: {e}")
         traceback.print_exc()
+
+
+        
