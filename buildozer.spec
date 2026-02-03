@@ -20,7 +20,7 @@ version = 1.0
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,kivy==2.3.0,kivymd,pillow,requests,urllib3,chardet,idna,certifi,flask
+requirements = python3,kivy,kivymd,flask,werkzeug,jinja2,itsdangerous,click,markupsafe,pillow,android,openssl
 
 # (str) Icon of the application
 icon.filename = logo.png
