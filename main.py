@@ -5,12 +5,17 @@ import threading
 import shutil
 import zipfile
 import uuid
+import traceback  # 🔥 ডিবাগিং এর জন্য ইম্পোর্ট করা হলো
 from datetime import datetime
 from flask import Flask, request, jsonify
 
 # 🔥 FIX: লাল ডট (Multi-touch Red Dot) বন্ধ করার কনফিগারেশন
 from kivy.config import Config
-Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
+try:
+    Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
+    print("DEBUG: Kivy Config Set Successfully")
+except Exception as e:
+    print(f"DEBUG ERROR: Failed to set Kivy Config: {e}")
 
 # Kivy & KivyMD Imports
 from kivymd.app import MDApp
@@ -409,6 +414,7 @@ CURRENT_USER = None
 
 class BackendEngine:
     def __init__(self):
+        print("DEBUG: Initializing BackendEngine...")
         self.root = os.path.abspath("BanglaDB_Data")
         self.auth_file = os.path.abspath("bangladb_users.json")
         
@@ -418,46 +424,70 @@ class BackendEngine:
         else:
             self.backup_dir = os.path.abspath("BanglaDB_Backups")
         
-        if not os.path.exists(self.root): os.makedirs(self.root)
-        if not os.path.exists(self.backup_dir): os.makedirs(self.backup_dir)
+        try:
+            if not os.path.exists(self.root): os.makedirs(self.root)
+            if not os.path.exists(self.backup_dir): os.makedirs(self.backup_dir)
+            print(f"DEBUG: Directories created/verified: {self.root}, {self.backup_dir}")
+        except Exception as e:
+            print(f"DEBUG ERROR: Failed to create directories: {e}")
         
         # User auth file initialization
-        if not os.path.exists(self.auth_file):
-            with open(self.auth_file, 'w') as f: json.dump([], f)
-        else:
-            try:
-                with open(self.auth_file, 'r') as f:
-                    data = json.load(f)
-                    if isinstance(data, dict): 
-                         with open(self.auth_file, 'w') as f: json.dump([], f)
-            except:
-                 with open(self.auth_file, 'w') as f: json.dump([], f)
+        try:
+            if not os.path.exists(self.auth_file):
+                with open(self.auth_file, 'w') as f: json.dump([], f)
+                print("DEBUG: Created new auth file.")
+            else:
+                try:
+                    with open(self.auth_file, 'r') as f:
+                        data = json.load(f)
+                        if isinstance(data, dict): 
+                             with open(self.auth_file, 'w') as f: json.dump([], f)
+                             print("DEBUG: Reset auth file (was dict, expected list).")
+                except:
+                     with open(self.auth_file, 'w') as f: json.dump([], f)
+                     print("DEBUG: Reset auth file (corrupted).")
+        except Exception as e:
+            print(f"DEBUG ERROR: Auth file init failed: {e}")
 
     def register_user(self, user, password):
-        with open(self.auth_file, 'r') as f: users = json.load(f)
-        for u in users:
-            if u['user'] == user and u['pass'] == password:
-                return False, "This User+Password combination already exists!"
-        
-        unique_id = str(uuid.uuid4())
-        users.append({"user": user, "pass": password, "uid": unique_id})
-        with open(self.auth_file, 'w') as f: json.dump(users, f)
-        
-        user_folder = os.path.join(self.root, unique_id)
-        if not os.path.exists(user_folder): os.makedirs(user_folder)
-        
-        return True, "Success"
+        print(f"DEBUG: Registering user {user}")
+        try:
+            with open(self.auth_file, 'r') as f: users = json.load(f)
+            for u in users:
+                if u['user'] == user and u['pass'] == password:
+                    print("DEBUG: User already exists")
+                    return False, "This User+Password combination already exists!"
+            
+            unique_id = str(uuid.uuid4())
+            users.append({"user": user, "pass": password, "uid": unique_id})
+            with open(self.auth_file, 'w') as f: json.dump(users, f)
+            
+            user_folder = os.path.join(self.root, unique_id)
+            if not os.path.exists(user_folder): os.makedirs(user_folder)
+            
+            print("DEBUG: Registration success")
+            return True, "Success"
+        except Exception as e:
+            print(f"DEBUG ERROR: Register user failed: {e}")
+            return False, f"Error: {str(e)}"
 
     def login_user(self, user, password):
-        with open(self.auth_file, 'r') as f: users = json.load(f)
-        for u in users:
-            if u['user'] == user and u['pass'] == password:
-                global CURRENT_USER
-                CURRENT_USER = u
-                user_folder = os.path.join(self.root, u.get('uid'))
-                if not os.path.exists(user_folder): os.makedirs(user_folder)
-                return True, "Login Success!"
-        return False, "Invalid Credentials"
+        print(f"DEBUG: Attempting login for {user}")
+        try:
+            with open(self.auth_file, 'r') as f: users = json.load(f)
+            for u in users:
+                if u['user'] == user and u['pass'] == password:
+                    global CURRENT_USER
+                    CURRENT_USER = u
+                    user_folder = os.path.join(self.root, u.get('uid'))
+                    if not os.path.exists(user_folder): os.makedirs(user_folder)
+                    print("DEBUG: Login success")
+                    return True, "Login Success!"
+            print("DEBUG: Login failed - Invalid credentials")
+            return False, "Invalid Credentials"
+        except Exception as e:
+            print(f"DEBUG ERROR: Login failed: {e}")
+            return False, f"Error: {str(e)}"
 
     def get_user_path(self, target_user_dict=None):
         user_info = target_user_dict if target_user_dict else CURRENT_USER
@@ -467,67 +497,104 @@ class BackendEngine:
 
     # --- CRUD Operations ---
     def get_databases(self):
-        user_path = self.get_user_path()
-        if not os.path.exists(user_path): return []
-        return [f.replace('.json', '') for f in os.listdir(user_path) if f.endswith('.json')]
+        try:
+            user_path = self.get_user_path()
+            if not os.path.exists(user_path): return []
+            dbs = [f.replace('.json', '') for f in os.listdir(user_path) if f.endswith('.json')]
+            print(f"DEBUG: Found databases: {dbs}")
+            return dbs
+        except Exception as e:
+            print(f"DEBUG ERROR: get_databases failed: {e}")
+            return []
 
     def create_db(self, name):
-        user_path = self.get_user_path()
-        path = f"{user_path}/{name}.json"
-        if not os.path.exists(path):
-            with open(path, 'w') as f: json.dump({"tables": {}}, f)
-            return True
-        return False
+        print(f"DEBUG: Creating DB {name}")
+        try:
+            user_path = self.get_user_path()
+            path = f"{user_path}/{name}.json"
+            if not os.path.exists(path):
+                with open(path, 'w') as f: json.dump({"tables": {}}, f)
+                print("DEBUG: DB Created")
+                return True
+            print("DEBUG: DB Exists")
+            return False
+        except Exception as e:
+            print(f"DEBUG ERROR: create_db failed: {e}")
+            return False
 
     def rename_db(self, old_name, new_name):
-        user_path = self.get_user_path()
-        old_path = os.path.join(user_path, f"{old_name}.json")
-        new_path = os.path.join(user_path, f"{new_name}.json")
-        if os.path.exists(old_path) and not os.path.exists(new_path):
-            os.rename(old_path, new_path)
-            return True
-        return False
+        print(f"DEBUG: Renaming DB {old_name} to {new_name}")
+        try:
+            user_path = self.get_user_path()
+            old_path = os.path.join(user_path, f"{old_name}.json")
+            new_path = os.path.join(user_path, f"{new_name}.json")
+            if os.path.exists(old_path) and not os.path.exists(new_path):
+                os.rename(old_path, new_path)
+                return True
+            return False
+        except Exception as e:
+            print(f"DEBUG ERROR: rename_db failed: {e}")
+            return False
 
     def delete_db(self, name):
-        user_path = self.get_user_path()
-        path = f"{user_path}/{name}.json"
-        if os.path.exists(path): os.remove(path)
+        print(f"DEBUG: Deleting DB {name}")
+        try:
+            user_path = self.get_user_path()
+            path = f"{user_path}/{name}.json"
+            if os.path.exists(path): os.remove(path)
+        except Exception as e:
+            print(f"DEBUG ERROR: delete_db failed: {e}")
 
     def get_tables(self, db, user_obj=None):
         try:
             path = f"{self.get_user_path(user_obj)}/{db}.json"
             with open(path, 'r') as f: return list(json.load(f)["tables"].keys())
-        except: return []
+        except Exception as e:
+            print(f"DEBUG ERROR: get_tables failed: {e}")
+            return []
 
     def create_table(self, db, table, cols, user_obj=None):
-        path = f"{self.get_user_path(user_obj)}/{db}.json"
-        with open(path, 'r') as f: d = json.load(f)
-        if table not in d["tables"]:
-            d["tables"][table] = {"columns": ["id"] + cols, "rows": []}
-            with open(path, 'w') as f: json.dump(d, f, indent=4)
+        print(f"DEBUG: Creating table {table} in {db}")
+        try:
+            path = f"{self.get_user_path(user_obj)}/{db}.json"
+            with open(path, 'r') as f: d = json.load(f)
+            if table not in d["tables"]:
+                d["tables"][table] = {"columns": ["id"] + cols, "rows": []}
+                with open(path, 'w') as f: json.dump(d, f, indent=4)
+        except Exception as e:
+            print(f"DEBUG ERROR: create_table failed: {e}")
 
     def update_table_struct(self, db, old_table_name, new_table_name, new_cols):
-        path = f"{self.get_user_path()}/{db}.json"
-        with open(path, 'r') as f: d = json.load(f)
-        
-        if old_table_name in d["tables"]:
-            table_data = d["tables"].pop(old_table_name)
+        print(f"DEBUG: Updating table struct {old_table_name} -> {new_table_name}")
+        try:
+            path = f"{self.get_user_path()}/{db}.json"
+            with open(path, 'r') as f: d = json.load(f)
             
-            if "id" not in new_cols: new_cols.insert(0, "id")
-            table_data["columns"] = new_cols
-            
-            d["tables"][new_table_name] = table_data
-            
-            with open(path, 'w') as f: json.dump(d, f, indent=4)
-            return True
-        return False
+            if old_table_name in d["tables"]:
+                table_data = d["tables"].pop(old_table_name)
+                
+                if "id" not in new_cols: new_cols.insert(0, "id")
+                table_data["columns"] = new_cols
+                
+                d["tables"][new_table_name] = table_data
+                
+                with open(path, 'w') as f: json.dump(d, f, indent=4)
+                return True
+            return False
+        except Exception as e:
+            print(f"DEBUG ERROR: update_table_struct failed: {e}")
+            return False
 
     def delete_table(self, db, table):
-        path = f"{self.get_user_path()}/{db}.json"
-        with open(path, 'r') as f: d = json.load(f)
-        if table in d["tables"]:
-            del d["tables"][table]
-            with open(path, 'w') as f: json.dump(d, f, indent=4)
+        print(f"DEBUG: Deleting table {table}")
+        try:
+            path = f"{self.get_user_path()}/{db}.json"
+            with open(path, 'r') as f: d = json.load(f)
+            if table in d["tables"]:
+                del d["tables"][table]
+                with open(path, 'w') as f: json.dump(d, f, indent=4)
+        except Exception as e:
+            print(f"DEBUG ERROR: delete_table failed: {e}")
 
     def get_table_data(self, db, table, user_obj=None):
         try:
@@ -535,84 +602,116 @@ class BackendEngine:
             with open(path, 'r') as f:
                 data = json.load(f)["tables"].get(table)
                 if data: return data["columns"], data["rows"]
-        except: pass
+        except Exception as e:
+            print(f"DEBUG ERROR: get_table_data failed: {e}")
         return [], []
 
     def insert_data(self, db, table, data, user_obj=None):
-        path = f"{self.get_user_path(user_obj)}/{db}.json"
-        with open(path, 'r') as f: d = json.load(f)
-        rows = d["tables"][table]["rows"]
-        new_id = str(max([int(r.get("id", 0)) for r in rows], default=0) + 1)
-        data["id"] = new_id
-        rows.append(data)
-        with open(path, 'w') as f: json.dump(d, f, indent=4)
+        print(f"DEBUG: Inserting data into {table}")
+        try:
+            path = f"{self.get_user_path(user_obj)}/{db}.json"
+            with open(path, 'r') as f: d = json.load(f)
+            rows = d["tables"][table]["rows"]
+            new_id = str(max([int(r.get("id", 0)) for r in rows], default=0) + 1)
+            data["id"] = new_id
+            rows.append(data)
+            with open(path, 'w') as f: json.dump(d, f, indent=4)
+        except Exception as e:
+            print(f"DEBUG ERROR: insert_data failed: {e}")
 
     def update_row_data(self, db, table, row_id, new_data, user_obj=None):
-        path = f"{self.get_user_path(user_obj)}/{db}.json"
-        with open(path, 'r') as f: d = json.load(f)
-        rows = d["tables"][table]["rows"]
-        
-        for i, row in enumerate(rows):
-            if str(row.get("id")) == str(row_id):
-                new_data["id"] = row_id
-                rows[i] = new_data
-                with open(path, 'w') as f: json.dump(d, f, indent=4)
-                return True
-        return False
+        print(f"DEBUG: Updating row {row_id} in {table}")
+        try:
+            path = f"{self.get_user_path(user_obj)}/{db}.json"
+            with open(path, 'r') as f: d = json.load(f)
+            rows = d["tables"][table]["rows"]
+            
+            for i, row in enumerate(rows):
+                if str(row.get("id")) == str(row_id):
+                    new_data["id"] = row_id
+                    rows[i] = new_data
+                    with open(path, 'w') as f: json.dump(d, f, indent=4)
+                    return True
+            return False
+        except Exception as e:
+            print(f"DEBUG ERROR: update_row_data failed: {e}")
+            return False
 
     def delete_data(self, db, table, row_id):
-        path = f"{self.get_user_path()}/{db}.json"
-        with open(path, 'r') as f: d = json.load(f)
-        d["tables"][table]["rows"] = [r for r in d["tables"][table]["rows"] if str(r.get("id")) != str(row_id)]
-        with open(path, 'w') as f: json.dump(d, f, indent=4)
+        print(f"DEBUG: Deleting row {row_id} from {table}")
+        try:
+            path = f"{self.get_user_path()}/{db}.json"
+            with open(path, 'r') as f: d = json.load(f)
+            d["tables"][table]["rows"] = [r for r in d["tables"][table]["rows"] if str(r.get("id")) != str(row_id)]
+            with open(path, 'w') as f: json.dump(d, f, indent=4)
+        except Exception as e:
+            print(f"DEBUG ERROR: delete_data failed: {e}")
 
     # --- Backup System ---
     def create_backup(self, db_name=None):
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        user_path = self.get_user_path()
-        
-        if db_name and db_name != "ALL":
-            source_file = os.path.join(user_path, f"{db_name}.json")
-            if not os.path.exists(source_file): return "Database not found!"
+        print(f"DEBUG: Creating backup for {db_name}")
+        try:
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            user_path = self.get_user_path()
             
-            zip_filename = f"{CURRENT_USER['user']}_{db_name}_{ts}.zip"
-            save_path = os.path.join(self.backup_dir, zip_filename)
-            
-            with zipfile.ZipFile(save_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                zf.write(source_file, arcname=f"{db_name}.json")
-            return f"Backup Saved!\nLocation:\n{save_path}"
-        else:
-            base_name = f"{CURRENT_USER['user']}_FULL_{ts}.zip"
-            save_path = os.path.join(self.backup_dir, base_name)
-            
-            with zipfile.ZipFile(save_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                for root, dirs, files in os.walk(user_path):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        zf.write(file_path, arcname=file)
-            return f"Full Backup Saved!\nLocation:\n{save_path}"
+            if db_name and db_name != "ALL":
+                source_file = os.path.join(user_path, f"{db_name}.json")
+                if not os.path.exists(source_file): return "Database not found!"
+                
+                zip_filename = f"{CURRENT_USER['user']}_{db_name}_{ts}.zip"
+                save_path = os.path.join(self.backup_dir, zip_filename)
+                
+                with zipfile.ZipFile(save_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                    zf.write(source_file, arcname=f"{db_name}.json")
+                return f"Backup Saved!\nLocation:\n{save_path}"
+            else:
+                base_name = f"{CURRENT_USER['user']}_FULL_{ts}.zip"
+                save_path = os.path.join(self.backup_dir, base_name)
+                
+                with zipfile.ZipFile(save_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                    for root, dirs, files in os.walk(user_path):
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            zf.write(file_path, arcname=file)
+                return f"Full Backup Saved!\nLocation:\n{save_path}"
+        except Exception as e:
+            print(f"DEBUG ERROR: create_backup failed: {e}")
+            return f"Error: {str(e)}"
 
     def get_backups(self):
-        return [f for f in os.listdir(self.backup_dir) if f.endswith('.zip')]
+        try:
+            return [f for f in os.listdir(self.backup_dir) if f.endswith('.zip')]
+        except Exception as e:
+            print(f"DEBUG ERROR: get_backups failed: {e}")
+            return []
 
     def restore_backup(self, filepath):
+        print(f"DEBUG: Restoring backup from {filepath}")
         try:
             target_path = self.get_user_path()
             with zipfile.ZipFile(filepath, 'r') as zip_ref:
                 zip_ref.extractall(target_path)
             return True, "Restore Successful!"
         except Exception as e:
+            print(f"DEBUG ERROR: restore_backup failed: {e}")
             return False, str(e)
             
     def authenticate_api_user(self, user, password):
-        with open(self.auth_file, 'r') as f: users = json.load(f)
-        for u in users:
-            if u['user'] == user and u['pass'] == password:
-                if 'uid' not in u: u['uid'] = str(uuid.uuid4())
-                return u
+        try:
+            with open(self.auth_file, 'r') as f: users = json.load(f)
+            for u in users:
+                if u['user'] == user and u['pass'] == password:
+                    if 'uid' not in u: u['uid'] = str(uuid.uuid4())
+                    return u
+        except Exception as e:
+            print(f"DEBUG ERROR: authenticate_api_user failed: {e}")
         return None
 
-engine = BackendEngine()
+try:
+    engine = BackendEngine()
+except Exception as e:
+    print(f"DEBUG CRITICAL: Engine Init Failed: {e}")
+    traceback.print_exc()
 
 # --- FLASK API ---
 @server.route('/api', methods=['POST'])
@@ -644,9 +743,16 @@ def api_handler():
                 return jsonify({"status": "error", "msg": "ID not found"})
                 
         return jsonify({"status": "error", "msg": "Invalid Action"})
-    except Exception as e: return jsonify({"status": "error", "msg": str(e)})
+    except Exception as e:
+        print(f"DEBUG ERROR: API Handler failed: {e}")
+        return jsonify({"status": "error", "msg": str(e)})
 
-def run_flask(): server.run(host='0.0.0.0', port=5000)
+def run_flask():
+    print("DEBUG: Starting Flask Server...")
+    try:
+        server.run(host='0.0.0.0', port=5000)
+    except Exception as e:
+        print(f"DEBUG CRITICAL: Flask Server Failed: {e}")
 
 def get_ip():
     try:
@@ -654,7 +760,9 @@ def get_ip():
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]; s.close()
         return ip
-    except: return "127.0.0.1"
+    except Exception as e:
+        print(f"DEBUG ERROR: get_ip failed: {e}")
+        return "127.0.0.1"
 
 # ==========================================
 # ৩. UI Logic (Screens)
@@ -662,9 +770,16 @@ def get_ip():
 class AuthScreen(Screen):
     dialog = None
     def do_login(self):
-        res, msg = engine.login_user(self.ids.user.text, self.ids.pasw.text)
-        if res: MDApp.get_running_app().switch_screen('home')
-        else: self.show_alert(msg)
+        print("DEBUG: Login Button Pressed")
+        try:
+            res, msg = engine.login_user(self.ids.user.text, self.ids.pasw.text)
+            if res: 
+                MDApp.get_running_app().switch_screen('home')
+            else: 
+                self.show_alert(msg)
+        except Exception as e:
+            print(f"DEBUG ERROR: do_login failed: {e}")
+            self.show_alert(f"Error: {e}")
     
     def show_alert(self, t):
         if not self.dialog:
@@ -675,47 +790,55 @@ class AuthScreen(Screen):
 class RegisterScreen(Screen):
     dialog = None
     def do_reg(self):
-        res, msg = engine.register_user(self.ids.reg_user.text, self.ids.reg_pass.text)
-        if not self.dialog:
-            self.dialog = MDDialog(buttons=[MDFlatButton(text="OK", on_release=lambda x: self.dialog.dismiss())])
-        self.dialog.text = msg
-        self.dialog.bind(on_dismiss=lambda x: MDApp.get_running_app().switch_screen('login') if res else None)
-        self.dialog.open()
+        print("DEBUG: Register Button Pressed")
+        try:
+            res, msg = engine.register_user(self.ids.reg_user.text, self.ids.reg_pass.text)
+            if not self.dialog:
+                self.dialog = MDDialog(buttons=[MDFlatButton(text="OK", on_release=lambda x: self.dialog.dismiss())])
+            self.dialog.text = msg
+            self.dialog.bind(on_dismiss=lambda x: MDApp.get_running_app().switch_screen('login') if res else None)
+            self.dialog.open()
+        except Exception as e:
+            print(f"DEBUG ERROR: do_reg failed: {e}")
 
 class HomeScreen(Screen):
     dialog = None
     create_dialog = None
     
-    def on_enter(self): self.load_dbs()
+    def on_enter(self): 
+        print("DEBUG: HomeScreen Entered")
+        self.load_dbs()
     
     def load_dbs(self):
-        self.ids.db_list_view.clear_widgets()
-        for db in engine.get_databases():
-            item = OneLineAvatarIconListItem(
-                text=db, 
-                bg_color=(1,1,1,1), 
-                on_release=lambda x, d=db: MDApp.get_running_app().open_table_screen(d)
-            )
-            item.add_widget(IconLeftWidget(icon="database", theme_text_color="Custom", text_color=(0, 0.48, 1, 1)))
-            
-            # 🔥 FIX: RightContentCls ব্যবহার করে স্পেসিং ঠিক করা হয়েছে
-            right_container = RightContentCls(spacing=dp(15))
-            
-            edit_btn = MDIconButton(icon="pencil", theme_text_color="Custom", text_color=(1, 0.75, 0, 1), pos_hint={"center_y": .5})
-            edit_btn.bind(on_release=lambda x, d=db: self.show_rename_db_dialog(d))
-            
-            del_btn = MDIconButton(icon="trash-can", theme_text_color="Custom", text_color=(1, 0.2, 0.2, 1), pos_hint={"center_y": .5})
-            del_btn.bind(on_release=lambda x, d=db: self.confirm_delete(d))
-            
-            # 🔥 FIX: Spacer Widget দিয়ে ডান পাশে ফাঁকা রাখা হয়েছে
-            spacer = Widget(size_hint_x=None, width=dp(15)) 
-            
-            right_container.add_widget(edit_btn)
-            right_container.add_widget(del_btn)
-            right_container.add_widget(spacer) # স্পেসার শেষে যোগ
-            
-            item.add_widget(right_container)
-            self.ids.db_list_view.add_widget(item)
+        print("DEBUG: Loading Databases to List")
+        try:
+            self.ids.db_list_view.clear_widgets()
+            for db in engine.get_databases():
+                item = OneLineAvatarIconListItem(
+                    text=db, 
+                    bg_color=(1,1,1,1), 
+                    on_release=lambda x, d=db: MDApp.get_running_app().open_table_screen(d)
+                )
+                item.add_widget(IconLeftWidget(icon="database", theme_text_color="Custom", text_color=(0, 0.48, 1, 1)))
+                
+                right_container = RightContentCls(spacing=dp(15))
+                
+                edit_btn = MDIconButton(icon="pencil", theme_text_color="Custom", text_color=(1, 0.75, 0, 1), pos_hint={"center_y": .5})
+                edit_btn.bind(on_release=lambda x, d=db: self.show_rename_db_dialog(d))
+                
+                del_btn = MDIconButton(icon="trash-can", theme_text_color="Custom", text_color=(1, 0.2, 0.2, 1), pos_hint={"center_y": .5})
+                del_btn.bind(on_release=lambda x, d=db: self.confirm_delete(d))
+                
+                spacer = Widget(size_hint_x=None, width=dp(15)) 
+                
+                right_container.add_widget(edit_btn)
+                right_container.add_widget(del_btn)
+                right_container.add_widget(spacer) 
+                
+                item.add_widget(right_container)
+                self.ids.db_list_view.add_widget(item)
+        except Exception as e:
+            print(f"DEBUG ERROR: load_dbs failed: {e}")
 
     def show_rename_db_dialog(self, old_name):
         self.tf_rename = MDTextField(text=old_name, hint_text="New Database Name")
@@ -732,9 +855,13 @@ class HomeScreen(Screen):
     
     def toggle_server(self):
         global SERVER_ACTIVE, SERVER_THREAD_STARTED
+        print(f"DEBUG: Toggling Server. Current State: {SERVER_ACTIVE}")
         btn = self.ids.btn_server; lbl = self.ids.lbl_ip
         if not SERVER_ACTIVE:
-            if not SERVER_THREAD_STARTED: threading.Thread(target=run_flask, daemon=True).start(); SERVER_THREAD_STARTED = True
+            if not SERVER_THREAD_STARTED: 
+                threading.Thread(target=run_flask, daemon=True).start()
+                SERVER_THREAD_STARTED = True
+                print("DEBUG: Server Thread Started")
             SERVER_ACTIVE = True; btn.text = "STOP SERVER"; btn.md_bg_color = (1, 0.2, 0.2, 1); lbl.text = f"RUNNING: {get_ip()}:5000"; lbl.text_color = (0, 0.8, 0.3, 1)
         else:
             SERVER_ACTIVE = False; btn.text = "START SERVER"; btn.md_bg_color = (0, 0.8, 0.3, 1); lbl.text = "SERVER: STOPPED"; lbl.text_color = (1, 0.2, 0.2, 1)
@@ -752,33 +879,35 @@ class TableScreen(Screen):
     create_dialog = None
     
     def on_enter(self):
+        print(f"DEBUG: TableScreen Entered for DB: {self.db_name}")
         self.ids.table_list.clear_widgets()
-        for t in engine.get_tables(self.db_name):
-            item = OneLineAvatarIconListItem(
-                text=t, 
-                bg_color=(1,1,1,1), 
-                on_release=lambda x, table=t: MDApp.get_running_app().open_data_screen(self.db_name, table)
-            )
-            item.add_widget(IconLeftWidget(icon="table", theme_text_color="Custom", text_color=(0, 0.48, 1, 1)))
-            
-            # 🔥 FIX
-            right_container = RightContentCls(spacing=dp(15))
-            
-            edit_btn = MDIconButton(icon="pencil", theme_text_color="Custom", text_color=(1, 0.75, 0, 1), pos_hint={"center_y": .5})
-            edit_btn.bind(on_release=lambda x, table=t: self.show_edit_table_dialog(table))
-            
-            del_btn = MDIconButton(icon="trash-can", theme_text_color="Custom", text_color=(1, 0.2, 0.2, 1), pos_hint={"center_y": .5})
-            del_btn.bind(on_release=lambda x, table=t: self.confirm_delete(table))
-            
-            # 🔥 Spacer
-            spacer = Widget(size_hint_x=None, width=dp(15))
-            
-            right_container.add_widget(edit_btn)
-            right_container.add_widget(del_btn)
-            right_container.add_widget(spacer)
-            
-            item.add_widget(right_container)
-            self.ids.table_list.add_widget(item)
+        try:
+            for t in engine.get_tables(self.db_name):
+                item = OneLineAvatarIconListItem(
+                    text=t, 
+                    bg_color=(1,1,1,1), 
+                    on_release=lambda x, table=t: MDApp.get_running_app().open_data_screen(self.db_name, table)
+                )
+                item.add_widget(IconLeftWidget(icon="table", theme_text_color="Custom", text_color=(0, 0.48, 1, 1)))
+                
+                right_container = RightContentCls(spacing=dp(15))
+                
+                edit_btn = MDIconButton(icon="pencil", theme_text_color="Custom", text_color=(1, 0.75, 0, 1), pos_hint={"center_y": .5})
+                edit_btn.bind(on_release=lambda x, table=t: self.show_edit_table_dialog(table))
+                
+                del_btn = MDIconButton(icon="trash-can", theme_text_color="Custom", text_color=(1, 0.2, 0.2, 1), pos_hint={"center_y": .5})
+                del_btn.bind(on_release=lambda x, table=t: self.confirm_delete(table))
+                
+                spacer = Widget(size_hint_x=None, width=dp(15))
+                
+                right_container.add_widget(edit_btn)
+                right_container.add_widget(del_btn)
+                right_container.add_widget(spacer)
+                
+                item.add_widget(right_container)
+                self.ids.table_list.add_widget(item)
+        except Exception as e:
+            print(f"DEBUG ERROR: Table load failed: {e}")
 
     def show_edit_table_dialog(self, old_table_name):
         c, _ = engine.get_table_data(self.db_name, old_table_name)
@@ -815,35 +944,37 @@ class DataScreen(Screen):
     create_dialog = None
     
     def on_enter(self):
+        print(f"DEBUG: DataScreen Entered for Table: {self.table_name}")
         self.ids.data_list.clear_widgets()
-        cols, rows = engine.get_table_data(self.db_name, self.table_name)
-        if not rows: self.ids.data_list.add_widget(MDLabel(text="No Data Found", halign="center")); return
-            
-        for r in rows:
-            row_id = r.get("id", "?")
-            all_data = " | ".join([f"{k}:{v}" for k,v in r.items() if k != 'id'])
-            
-            item = ThreeLineAvatarIconListItem(text=f"ID: {row_id}", secondary_text=all_data, bg_color=(1,1,1,1))
-            item.add_widget(IconLeftWidget(icon="text-box-outline", theme_text_color="Custom", text_color=(0, 0.48, 1, 1)))
-            
-            # 🔥 FIX: Right Container & Buttons
-            right_container = RightContentCls(spacing=dp(15))
-            
-            edit_btn = MDIconButton(icon="pencil", theme_text_color="Custom", text_color=(1, 0.75, 0, 1), pos_hint={"center_y": .5})
-            edit_btn.bind(on_release=lambda x, d=r: self.show_edit_row_dialog(d))
-            
-            del_btn = MDIconButton(icon="trash-can", theme_text_color="Custom", text_color=(1, 0.2, 0.2, 1), pos_hint={"center_y": .5})
-            del_btn.bind(on_release=lambda x, rid=row_id: self.confirm_delete(rid))
-            
-            # 🔥 Spacer Widget for margin
-            spacer = Widget(size_hint_x=None, width=dp(15))
-            
-            right_container.add_widget(edit_btn)
-            right_container.add_widget(del_btn)
-            right_container.add_widget(spacer)
-            
-            item.add_widget(right_container)
-            self.ids.data_list.add_widget(item)
+        try:
+            cols, rows = engine.get_table_data(self.db_name, self.table_name)
+            if not rows: self.ids.data_list.add_widget(MDLabel(text="No Data Found", halign="center")); return
+                
+            for r in rows:
+                row_id = r.get("id", "?")
+                all_data = " | ".join([f"{k}:{v}" for k,v in r.items() if k != 'id'])
+                
+                item = ThreeLineAvatarIconListItem(text=f"ID: {row_id}", secondary_text=all_data, bg_color=(1,1,1,1))
+                item.add_widget(IconLeftWidget(icon="text-box-outline", theme_text_color="Custom", text_color=(0, 0.48, 1, 1)))
+                
+                right_container = RightContentCls(spacing=dp(15))
+                
+                edit_btn = MDIconButton(icon="pencil", theme_text_color="Custom", text_color=(1, 0.75, 0, 1), pos_hint={"center_y": .5})
+                edit_btn.bind(on_release=lambda x, d=r: self.show_edit_row_dialog(d))
+                
+                del_btn = MDIconButton(icon="trash-can", theme_text_color="Custom", text_color=(1, 0.2, 0.2, 1), pos_hint={"center_y": .5})
+                del_btn.bind(on_release=lambda x, rid=row_id: self.confirm_delete(rid))
+                
+                spacer = Widget(size_hint_x=None, width=dp(15))
+                
+                right_container.add_widget(edit_btn)
+                right_container.add_widget(del_btn)
+                right_container.add_widget(spacer)
+                
+                item.add_widget(right_container)
+                self.ids.data_list.add_widget(item)
+        except Exception as e:
+            print(f"DEBUG ERROR: Row load failed: {e}")
 
     def show_edit_row_dialog(self, row_data):
         c, _ = engine.get_table_data(self.db_name, self.table_name)
@@ -917,10 +1048,13 @@ class BackupScreen(Screen):
     
     def load_backups(self):
         self.ids.backup_list.clear_widgets()
-        for f in engine.get_backups():
-            item = OneLineAvatarIconListItem(text=f, on_release=lambda x, fi=f: self.restore_internal(fi))
-            item.add_widget(IconLeftWidget(icon="zip-box"))
-            self.ids.backup_list.add_widget(item)
+        try:
+            for f in engine.get_backups():
+                item = OneLineAvatarIconListItem(text=f, on_release=lambda x, fi=f: self.restore_internal(fi))
+                item.add_widget(IconLeftWidget(icon="zip-box"))
+                self.ids.backup_list.add_widget(item)
+        except Exception as e:
+            print(f"DEBUG ERROR: load_backups failed: {e}")
     
     def open_db_selector(self):
         dbs = engine.get_databases()
@@ -972,6 +1106,7 @@ class BackupScreen(Screen):
 
 class BanglaDBApp(MDApp):
     def build(self):
+        print("DEBUG: Building App Layout")
         Builder.load_string(KV_CODE)
         self.theme_cls.theme_style = "Light"
         self.theme_cls.primary_palette = "Blue"
@@ -987,13 +1122,18 @@ class BanglaDBApp(MDApp):
 
     # 🔥 FIX: অ্যাপ চালু হওয়ার সময় পারমিশন চাওয়া
     def on_start(self):
+        print("DEBUG: App Started")
         if platform == 'android':
-            from android.permissions import request_permissions, Permission
-            request_permissions([
-                Permission.READ_EXTERNAL_STORAGE, 
-                Permission.WRITE_EXTERNAL_STORAGE,
-                Permission.INTERNET
-            ])
+            try:
+                from android.permissions import request_permissions, Permission
+                request_permissions([
+                    Permission.READ_EXTERNAL_STORAGE, 
+                    Permission.WRITE_EXTERNAL_STORAGE,
+                    Permission.INTERNET
+                ])
+                print("DEBUG: Permissions Requested")
+            except Exception as e:
+                print(f"DEBUG CRITICAL: Permission Request Failed: {e}")
 
     def switch_screen(self, name): self.sm.current = name
     def open_table_screen(self, db): self.sm.get_screen("tables").db_name = db; self.switch_screen("tables")
@@ -1001,4 +1141,8 @@ class BanglaDBApp(MDApp):
     def logout(self): global CURRENT_USER; CURRENT_USER=None; self.switch_screen("login")
 
 if __name__ == "__main__":
-    BanglaDBApp().run()
+    try:
+        BanglaDBApp().run()
+    except Exception as e:
+        print(f"CRITICAL APP CRASH: {e}")
+        traceback.print_exc()
