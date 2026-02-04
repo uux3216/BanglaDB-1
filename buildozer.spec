@@ -30,7 +30,8 @@ icon.filename = logo.png
 presplash.filename = logo.png
 
 # (str) Presplash background color (for android)
-android.presplash_color = #FAFAFA
+# সাদা ব্যাকগ্রাউন্ড দেওয়া হলো যাতে গ্লিচ না হয়
+android.presplash_color = #FFFFFF
 
 # (str) Supported orientation (landscape, portrait, portrait-reverse or landscape-reverse)
 orientation = portrait
@@ -42,7 +43,8 @@ fullscreen = 0
 android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
 
 # (int) Target Android API, should be as high as possible.
-android.api = 33
+# 🔥 FIX: API 33 থেকে কমিয়ে 31 (Android 12) করা হলো স্টেবল থাকার জন্য
+android.api = 31
 
 # (int) Minimum API your APK / AAB will support.
 android.minapi = 21
@@ -57,14 +59,20 @@ android.archs = arm64-v8a, armeabi-v7a
 android.allow_backup = True
 
 # (bool) If True, then the application will be kept active when it is started
-# এটি সার্ভার চালু রাখার জন্য জরুরি
 android.wakelock = True
 
-# 🔥 CRITICAL FIX: Automatically accept SDK license (Fixes 'Aidl not found' error)
+# 🔥 CRITICAL FIX: Automatically accept SDK license
 android.accept_sdk_license = True
 
 # (str) The format used to package the app for debug mode (apk or aar).
 android.debug_artifact = apk
+
+# 🔥 CRITICAL FIX: AndroidX চালু করা হলো (Black Screen Crash Fix)
+android.enable_androidx = True
+
+# (list) Gradle dependencies to add
+# মাঝে মাঝে AndroidX এর জন্য এই ডিপেন্ডেন্সি লাগে (অপশনাল, কিন্তু ভালো)
+# android.gradle_dependencies = "androidx.appcompat:appcompat:1.4.2"
 
 [buildozer]
 
