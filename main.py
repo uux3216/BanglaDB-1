@@ -1,11 +1,15 @@
 import os
+# 🔥 FIX: Kivy Config Crash সমাধান (এটি সবার উপরে থাকতে হবে)
+os.environ["KIVY_NO_CONFIG"] = "1"
+os.environ["KIVY_NO_FILELOG"] = "1"
+
 import json
 import socket
 import threading
 import shutil
 import zipfile
 import uuid
-import traceback  # 🔥 ডিবাগিং এর জন্য ইম্পোর্ট করা হলো
+import traceback
 from datetime import datetime
 from flask import Flask, request, jsonify
 
